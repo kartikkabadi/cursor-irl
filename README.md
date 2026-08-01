@@ -21,12 +21,15 @@ Vite, React, TypeScript, Hono, Cloudflare Workers, Cloudflare D1, Tailwind CSS, 
 
 ## Local development
 
-Prerequisites: Node.js, Wrangler, and an authenticated Cloudflare account for deployment. The project uses `sfw` for dependency installation in this workspace.
+Prerequisites: Node.js and Wrangler. An authenticated Cloudflare account is only needed for deployment. This Codex workspace uses `sfw`; contributors on a normal checkout can use `npm install`.
 
 Install and start the app in two terminals:
 
 ```bash
+# In this workspace:
 sfw npm install
+# On a normal checkout:
+npm install
 npm run db:migrate:local
 npm run dev:worker
 ```
