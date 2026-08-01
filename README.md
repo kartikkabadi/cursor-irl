@@ -1,37 +1,80 @@
 # Cursor IRL
 
-Live room for the Cursor Roadshow Bangalore. Turn handles into handshakes.
+Cursor IRL is a live, low-friction find-me room for Cursor Roadshow Bangalore. People join with a name, X handle, and one line about what they are building. The app gives each person a deterministic cursor identity, a public profile, a QR link, and a share card.
 
-- Live app: https://kartikkabadi.com/cursor-irl/
-- Source: https://github.com/kartikkabadi/cursor-irl
-- Stack: Vite + React + TypeScript, Hono on Cloudflare Workers, Cloudflare D1
-- Identity: deterministic Ditherprint patterns; no AI-generated avatars and no seed attendees
+- Live app: [kartikkabadi.com/cursor-irl](https://kartikkabadi.com/cursor-irl/)
+- Source and issues: [github.com/kartikkabadi/cursor-irl](https://github.com/kartikkabadi/cursor-irl)
+- License: [MIT](./LICENSE)
 
-## Development
+## What is included
+
+- Live room with search and presence filters.
+- Low-friction join flow centered on X identity.
+- Deterministic Ditherprint cursor patterns generated from a server-issued profile ID and variant. No AI-generated avatars or seeded attendee rows.
+- Public profile links with QR codes, “I met this person” connections, and presence controls.
+- Downloadable 1200 × 630 share cards and pre-filled Post on X links. Browsers cannot attach a downloaded image to an X composer automatically, so image attachment is an intentional final step.
+- Profile-specific Open Graph and Twitter metadata, with a Worker-served social preview image.
+
+## Stack
+
+Vite, React, TypeScript, Hono, Cloudflare Workers, Cloudflare D1, Tailwind CSS, Phosphor Icons, and `qrcode.react`.
+
+## Local development
+
+Prerequisites: Node.js, Wrangler, and an authenticated Cloudflare account for deployment. The project uses `sfw` for dependency installation in this workspace.
+
+Install and start the app in two terminals:
 
 ```bash
 sfw npm install
 npm run db:migrate:local
 npm run dev:worker
+```
+
+```bash
 npm run dev
 ```
 
-Useful checks:
+Open the Vite URL printed by the second terminal. The Vite dev server proxies `/api` to the local Worker.
+
+## Verification
+
+Unit tests and type checks:
 
 ```bash
 npm run typecheck
 npm run test
-npm run test:integration
 npm run build:path
 ```
 
+The API integration suite needs its own isolated Wrangler Worker and D1 state. Run these commands in separate terminals:
+
+```bash
+npm run db:migrate:integration
+npm run dev:worker:integration
+```
+
+Then run:
+
+```bash
+npm run test:integration
+```
+
+The integration suite creates temporary QA rows in `.wrangler/integration` and deletes them during teardown. It does not use the production database.
+
 ## Deployment
 
-The production app is mounted at `/cursor-irl/` on `kartikkabadi.com`. The Worker uses the `cursor-irl` D1 database and the checked-in migrations. Keep the remote database empty of synthetic attendees; integration tests create and delete their own temporary rows.
+Production is mounted at `/cursor-irl/` on `kartikkabadi.com`. The Worker uses the `cursor-irl` D1 database and the checked-in migrations. Do not add seed data to the remote database.
+
+After authenticating Wrangler, apply new migrations when needed and deploy:
 
 ```bash
 npm run db:migrate:remote
 npm run deploy
 ```
 
-Pull requests to `main` should pass typecheck, unit tests, integration tests, and the path build before merge. Do not commit `.env`, `.dev.vars`, Wrangler state, or production credentials.
+`npm run deploy` builds both the mounted `/cursor-irl/` asset tree and the path-aware SPA fallback before uploading the Worker and assets.
+
+## Pull requests
+
+Pull requests to `main` should include typecheck, unit tests, integration tests, the path build, desktop/mobile browser QA, and production route verification when the change affects deployment. Do not commit `.env`, `.dev.vars`, Wrangler state, screenshots, or production credentials.

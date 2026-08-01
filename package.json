@@ -1,11 +1,13 @@
 {
   "name": "cursor-irl",
-  "private": true,
+  "private": false,
+  "license": "MIT",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "dev:worker": "wrangler dev --local --persist-to .wrangler/state",
+    "dev:worker:integration": "wrangler dev --local --persist-to .wrangler/integration --port 8788",
     "build": "tsc -b && vite build",
     "build:path": "tsc -b && VITE_BASE_PATH=/cursor-irl/ vite build && VITE_BASE_PATH=/cursor-irl/ VITE_FALLBACK_BUILD=1 vite build",
     "preview": "vite preview --host 0.0.0.0",
@@ -13,6 +15,7 @@
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "db:migrate:local": "wrangler d1 migrations apply cursor-irl --local",
+    "db:migrate:integration": "wrangler d1 migrations apply cursor-irl --local --persist-to .wrangler/integration",
     "db:migrate:remote": "wrangler d1 migrations apply cursor-irl --remote",
     "deploy": "npm run build:path && wrangler deploy",
     "deploy:dry": "npm run build:path && wrangler deploy --dry-run"
