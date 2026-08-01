@@ -1,9 +1,10 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createAttendee } from "../lib/api";
 import { saveSession } from "../lib/storage";
 import { VENUE_ZONES, type VenueZone } from "../lib/types";
 import { CursorPointer } from "../components/CursorPointer";
+import { Field } from "../components/ui";
 
 const PREVIEW_COLORS = ["#f54e00", "#c0a8dd", "#9fbbe0", "#9fc9a2"];
 
@@ -218,25 +219,5 @@ export function JoinPage() {
         </div>
       </form>
     </div>
-  );
-}
-
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <label className="block space-y-1.5">
-      <span className="text-sm text-[color:var(--color-text)]">
-        {label}
-        {required ? <span className="text-[color:var(--color-accent)]"> *</span> : null}
-      </span>
-      {children}
-    </label>
   );
 }

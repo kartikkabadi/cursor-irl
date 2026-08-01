@@ -6,14 +6,16 @@ import {
   leaveEvent,
   updateAttendee,
 } from "../lib/api";
-import { clearSession, loadSession } from "../lib/storage";
+import { patchSession } from "../lib/storage";
+import { useSession } from "../hooks/useSession";
 import { VENUE_ZONES, type PublicAttendee, type VenueZone } from "../lib/types";
 import { CursorPointer } from "../components/CursorPointer";
 import { QrCode } from "../components/QrCode";
+import { Field } from "../components/ui";
 
 export function MePage() {
   const navigate = useNavigate();
-  const [session] = useState(() => loadSession());
+  const { session, clearSession: wipeSession } = useSession();
   const [person, setPerson] = useState<PublicAttendee | null>(null);
   const [connections, setConnections] = useState<PublicAttendee[]>([]);
   const [profileUrl, setProfileUrl] = useState("");
@@ -75,8 +77,116 @@ export function MePage() {
     );
   }
 
-  const activeSession = session;
+  return (
+    <MeBody
+      session={session}
+      person={person}
+      connections={connections}
+      profileUrl={profileUrl}
+      tweetUrl={tweetUrl}
+      error={error}
+      status={status}
+      setStatus={setStatus}
+      editing={editing}
+      setEditing={setEditing}
+      findMe={findMe}
+      setFindMe={setFindMe}
+      name={name}
+      setName={setName}
+      xHandle={xHandle}
+      setXHandle={setXHandle}
+      githubHandle={githubHandle}
+      setGithubHandle={setGithubHandle}
+      avatarUrl={avatarUrl}
+      setAvatarUrl={setAvatarUrl}
+      project={project}
+      setProject={setProject}
+      lookingFor={lookingFor}
+      setLookingFor={setLookingFor}
+      outfitClue={outfitClue}
+      setOutfitClue={setOutfitClue}
+      venueZone={venueZone}
+      setVenueZone={setVenueZone}
+      openToMeet={openToMeet}
+      setOpenToMeet={setOpenToMeet}
+      load={load}
+      wipeSession={wipeSession}
+      navigate={navigate}
+    />
+  );
+}
 
+type BodyProps = {
+  session: NonNullable<ReturnType<typeof useSession>["session"]>;
+  person: PublicAttendee | null;
+  connections: PublicAttendee[];
+  profileUrl: string;
+  tweetUrl: string;
+  error: string | null;
+  status: string | null;
+  setStatus: (v: string | null) => void;
+  editing: boolean;
+  setEditing: (v: boolean | ((prev: boolean) => boolean)) => void;
+  findMe: boolean;
+  setFindMe: (v: boolean) => void;
+  name: string;
+  setName: (v: string) => void;
+  xHandle: string;
+  setXHandle: (v: string) => void;
+  githubHandle: string;
+  setGithubHandle: (v: string) => void;
+  avatarUrl: string;
+  setAvatarUrl: (v: string) => void;
+  project: string;
+  setProject: (v: string) => void;
+  lookingFor: string;
+  setLookingFor: (v: string) => void;
+  outfitClue: string;
+  setOutfitClue: (v: string) => void;
+  venueZone: VenueZone;
+  setVenueZone: (v: VenueZone) => void;
+  openToMeet: boolean;
+  setOpenToMeet: (v: boolean) => void;
+  load: () => Promise<void>;
+  wipeSession: () => void;
+  navigate: ReturnType<typeof useNavigate>;
+};
+
+function MeBody({
+  session,
+  person,
+  connections,
+  profileUrl,
+  tweetUrl,
+  error,
+  status,
+  setStatus,
+  editing,
+  setEditing,
+  findMe,
+  setFindMe,
+  name,
+  setName,
+  xHandle,
+  setXHandle,
+  githubHandle,
+  setGithubHandle,
+  avatarUrl,
+  setAvatarUrl,
+  project,
+  setProject,
+  lookingFor,
+  setLookingFor,
+  outfitClue,
+  setOutfitClue,
+  venueZone,
+  setVenueZone,
+  openToMeet,
+  setOpenToMeet,
+  load,
+  wipeSession,
+  navigate,
+}: BodyProps) {
   if (error) {
     return (
       <div className="space-y-4">
@@ -86,7 +196,7 @@ export function MePage() {
           type="button"
           className="btn-secondary"
           onClick={() => {
-            clearSession();
+            wipeSession();
             navigate("/join");
           }}
         >
@@ -97,7 +207,9 @@ export function MePage() {
   }
 
   if (!person) {
-    return <div className="h-40 animate-pulse rounded-[4px] bg-[color:var(--color-card)]" />;
+    return (
+      <div className="h-40 animate-pulse rounded-[4px] bg-[color:var(--color-card)]" />
+    );
   }
 
   if (findMe) {
@@ -142,8 +254,8 @@ export function MePage() {
   async function onSave(e: FormEvent) {
     e.preventDefault();
     try {
-      await updateAttendee(activeSession.slug, {
-        editToken: activeSession.editToken,
+      await updateAttendee(session.slug, {
+        editToken: session.editToken,
         name,
         xHandle,
         githubHandle,
@@ -154,6 +266,7 @@ export function MePage() {
         venueZone,
         openToMeet,
       });
+      patchSession({ paused: false });
       setStatus("Saved.");
       setEditing(false);
       await load();
@@ -164,12 +277,21 @@ export function MePage() {
 
   async function onLeave() {
     try {
-      await leaveEvent(activeSession.slug, activeSession.editToken);
-      setStatus("You’re marked as left. Heartbeat will bring you back if you stay.");
+      await leaveEvent(session.slug, session.editToken);
+      patchSession({ paused: true });
+      setStatus(
+        "You’re marked as left. Heartbeats are paused until you tap I’m back.",
+      );
       await load();
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Leave failed");
     }
+  }
+
+  async function onBack() {
+    patchSession({ paused: false });
+    setStatus("You’re back in the room.");
+    await load();
   }
 
   async function onDelete() {
@@ -177,8 +299,8 @@ export function MePage() {
       return;
     }
     try {
-      await deleteAttendee(activeSession.slug, activeSession.editToken);
-      clearSession();
+      await deleteAttendee(session.slug, session.editToken);
+      wipeSession();
       navigate("/");
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Delete failed");
@@ -193,6 +315,11 @@ export function MePage() {
             Your cursor
           </p>
           <h1 className="mt-2 text-3xl tracking-tight">{person.name}</h1>
+          {session.paused ? (
+            <p className="mt-1 font-mono text-xs text-[color:var(--color-text-muted)]">
+              Presence paused
+            </p>
+          ) : null}
         </div>
         <CursorPointer
           color={person.cursorColor}
@@ -202,18 +329,41 @@ export function MePage() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <button type="button" className="btn-primary" onClick={() => setFindMe(true)}>
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => setFindMe(true)}
+        >
           Find me card
         </button>
-        <a href={tweetUrl} target="_blank" rel="noreferrer" className="btn-secondary">
+        <a
+          href={tweetUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="btn-secondary"
+        >
           Post on X
         </a>
         <Link to={`/p/${person.slug}`} className="btn-ghost">
           Public profile
         </Link>
-        <button type="button" className="btn-ghost" onClick={() => void onLeave()}>
-          I left
-        </button>
+        {session.paused ? (
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => void onBack()}
+          >
+            I’m back
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => void onLeave()}
+          >
+            I left
+          </button>
+        )}
       </div>
 
       <div className="rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-card)] p-4">
@@ -233,24 +383,70 @@ export function MePage() {
         </div>
         {editing ? (
           <form onSubmit={onSave} className="space-y-3">
-            <input className="field" value={name} onChange={(e) => setName(e.target.value)} required />
-            <input className="field" value={xHandle} onChange={(e) => setXHandle(e.target.value)} placeholder="X handle" />
-            <input className="field" value={githubHandle} onChange={(e) => setGithubHandle(e.target.value)} placeholder="GitHub" />
-            <input className="field" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="Avatar URL" />
-            <input className="field" value={project} onChange={(e) => setProject(e.target.value)} required />
-            <input className="field" value={lookingFor} onChange={(e) => setLookingFor(e.target.value)} placeholder="Looking for" />
-            <input className="field" value={outfitClue} onChange={(e) => setOutfitClue(e.target.value)} placeholder="Outfit clue" />
-            <select
-              className="field"
-              value={venueZone}
-              onChange={(e) => setVenueZone(e.target.value as VenueZone)}
-            >
-              {VENUE_ZONES.map((z) => (
-                <option key={z} value={z}>
-                  {z}
-                </option>
-              ))}
-            </select>
+            <Field label="Name" required>
+              <input
+                className="field"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+            </Field>
+            <Field label="X handle">
+              <input
+                className="field"
+                value={xHandle}
+                onChange={(e) => setXHandle(e.target.value)}
+              />
+            </Field>
+            <Field label="GitHub">
+              <input
+                className="field"
+                value={githubHandle}
+                onChange={(e) => setGithubHandle(e.target.value)}
+              />
+            </Field>
+            <Field label="Avatar URL">
+              <input
+                className="field"
+                value={avatarUrl}
+                onChange={(e) => setAvatarUrl(e.target.value)}
+              />
+            </Field>
+            <Field label="Building" required>
+              <input
+                className="field"
+                value={project}
+                onChange={(e) => setProject(e.target.value)}
+                required
+              />
+            </Field>
+            <Field label="Looking for">
+              <input
+                className="field"
+                value={lookingFor}
+                onChange={(e) => setLookingFor(e.target.value)}
+              />
+            </Field>
+            <Field label="Outfit clue">
+              <input
+                className="field"
+                value={outfitClue}
+                onChange={(e) => setOutfitClue(e.target.value)}
+              />
+            </Field>
+            <Field label="Venue zone">
+              <select
+                className="field"
+                value={venueZone}
+                onChange={(e) => setVenueZone(e.target.value as VenueZone)}
+              >
+                {VENUE_ZONES.map((z) => (
+                  <option key={z} value={z}>
+                    {z}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -264,7 +460,14 @@ export function MePage() {
             </button>
           </form>
         ) : (
-          <div className="rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-card)] p-4 text-sm space-y-1">
+          <div className="space-y-2 rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-card)] p-4 text-sm">
+            {person.avatarUrl ? (
+              <img
+                src={person.avatarUrl}
+                alt=""
+                className="h-16 w-16 rounded-[4px] object-cover"
+              />
+            ) : null}
             <p>{person.project}</p>
             <p className="font-mono text-xs text-[color:var(--color-text-muted)]">
               {[person.venueZone, person.outfitClue].filter(Boolean).join(" · ")}

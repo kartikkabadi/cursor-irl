@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getProfile, meetPerson } from "../lib/api";
-import { loadSession } from "../lib/storage";
+import { useSession } from "../hooks/useSession";
 import type { PublicAttendee } from "../lib/types";
 import { CursorPointer } from "../components/CursorPointer";
 import { QrCode } from "../components/QrCode";
 
 export function ProfilePage() {
   const { slug = "" } = useParams();
-  const session = loadSession();
+  const { session } = useSession();
   const [person, setPerson] = useState<PublicAttendee | null>(null);
   const [connections, setConnections] = useState<PublicAttendee[]>([]);
   const [profileUrl, setProfileUrl] = useState("");

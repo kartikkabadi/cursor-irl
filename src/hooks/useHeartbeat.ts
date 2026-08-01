@@ -1,19 +1,19 @@
 import { useEffect } from "react";
 import { heartbeat } from "../lib/api";
-import { loadSession } from "../lib/storage";
+import { useSession } from "./useSession";
 import { HEARTBEAT_MS } from "../lib/types";
 
 export function useHeartbeat() {
+  const { session } = useSession();
+
   useEffect(() => {
-    const session = loadSession();
-    if (!session) return;
+    if (!session || session.paused) return;
 
     let cancelled = false;
 
     const beat = () => {
-      const current = loadSession();
-      if (!current || cancelled) return;
-      void heartbeat(current.slug, current.editToken).catch(() => {
+      if (cancelled) return;
+      void heartbeat(session.slug, session.editToken).catch(() => {
         // Presence is best-effort; ignore transient failures.
       });
     };
@@ -24,5 +24,5 @@ export function useHeartbeat() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, []);
+  }, [session?.slug, session?.editToken, session?.paused]);
 }

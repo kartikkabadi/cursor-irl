@@ -69,11 +69,18 @@ Workers + static assets ship together. Free-tier friendly for a single-event dis
 
 ## Product rules (kept intentionally small)
 
-- Heartbeat every 60s while `/me` session is on this device
+- Heartbeat every 60s while your session is active on this device
 - “Here now” = last heartbeat &lt; 10 minutes
 - No GPS, chat, OAuth, or X scraping
-- “I left” pushes you out of Here now
+- “I left” pauses heartbeats and drops you from Here now
 - “I met this person” creates a deduped undirected connection
+
+## Threat model (accepted for a disposable event room)
+
+- Anyone can create a profile (no signup)
+- Edit/delete requires the device-local edit token
+- “I met this person” is one-sided by design
+- Set `KEEP_SEEDS_ACTIVE` to `"false"` (or remove) in production if you do not want demo seed attendees marked live
 
 ## Design
 

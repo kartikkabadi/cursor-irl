@@ -1,36 +1,21 @@
 import { z } from "zod";
+import {
+  ACTIVE_MS,
+  colorName,
+  VENUE_ZONES,
+  type PublicAttendee,
+} from "../../shared/attendee";
 
-export const VENUE_ZONES = [
-  "Entrance",
-  "Stage left",
-  "Stage right",
-  "Workshop",
-  "Coffee",
-  "Food",
-  "Outside",
-] as const;
-
-export const CURSOR_COLORS = [
-  "#f54e00",
-  "#c0a8dd",
-  "#9fbbe0",
-  "#dfa88f",
-  "#9fc9a2",
-  "#c08532",
-  "#267f99",
-  "#cf2d56",
-  "#e8a87c",
-  "#85a8d6",
-] as const;
-
-export const ACTIVE_MS = 10 * 60 * 1000;
+export { ACTIVE_MS, colorName, VENUE_ZONES };
+export type { PublicAttendee };
 
 export const joinSchema = z.object({
   name: z.string().trim().min(1).max(80),
   xHandle: z.string().trim().max(40).optional().or(z.literal("")),
   githubHandle: z.string().trim().max(40).optional().or(z.literal("")),
   avatarUrl: z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
     z.string().trim().url().max(500).optional(),
   ),
   project: z.string().trim().min(1).max(200),
@@ -74,43 +59,6 @@ export type AttendeeRow = {
   last_seen_at: number;
   created_at: number;
 };
-
-export type PublicAttendee = {
-  id: string;
-  slug: string;
-  name: string;
-  xHandle: string | null;
-  githubHandle: string | null;
-  avatarUrl: string | null;
-  project: string;
-  lookingFor: string | null;
-  outfitClue: string | null;
-  venueZone: string | null;
-  openToMeet: boolean;
-  cursorColor: string;
-  cursorCode: string;
-  lastSeenAt: number;
-  createdAt: number;
-  isActive: boolean;
-  connectionCount: number;
-  colorName: string;
-};
-
-export function colorName(hex: string): string {
-  const map: Record<string, string> = {
-    "#f54e00": "orange",
-    "#c0a8dd": "lavender",
-    "#9fbbe0": "blue",
-    "#dfa88f": "peach",
-    "#9fc9a2": "mint",
-    "#c08532": "gold",
-    "#267f99": "teal",
-    "#cf2d56": "rose",
-    "#e8a87c": "coral",
-    "#85a8d6": "sky",
-  };
-  return map[hex.toLowerCase()] ?? "bright";
-}
 
 export function toPublic(
   row: AttendeeRow,

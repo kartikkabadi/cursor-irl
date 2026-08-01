@@ -8,6 +8,26 @@ export class ApiError extends Error {
   }
 }
 
+function errorMessage(data: unknown, status: number): string {
+  if (!data || typeof data !== "object") {
+    return `Request failed (${status})`;
+  }
+  const record = data as Record<string, unknown>;
+  if (typeof record.error === "string") return record.error;
+  if (record.error && typeof record.error === "object") {
+    const nested = record.error as { message?: string; issues?: Array<{ message?: string }> };
+    if (typeof nested.message === "string") return nested.message;
+    if (Array.isArray(nested.issues) && nested.issues[0]?.message) {
+      return nested.issues[0].message!;
+    }
+  }
+  if (Array.isArray(record.error)) {
+    const first = record.error[0] as { message?: string } | undefined;
+    if (first?.message) return first.message;
+  }
+  return `Request failed (${status})`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
@@ -16,24 +36,29 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
-  const data = (await res.json().catch(() => ({}))) as {
-    error?: string;
-  } & T;
-  if (!res.ok) {
-    throw new ApiError(data.error || `Request failed (${res.status})`, res.status);
+
+  let data: unknown = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
   }
-  return data;
+
+  if (!res.ok) {
+    throw new ApiError(errorMessage(data, res.status), res.status);
+  }
+
+  if (data === null || typeof data !== "object") {
+    throw new ApiError(`Empty response (${res.status})`, res.status);
+  }
+
+  return data as T;
 }
 
-export function listAttendees(params: {
-  q?: string;
-  filter?: string;
-  all?: boolean;
-}) {
+export function listAttendees(params: { q?: string; filter?: string }) {
   const sp = new URLSearchParams();
   if (params.q) sp.set("q", params.q);
   if (params.filter && params.filter !== "all") sp.set("filter", params.filter);
-  if (params.all) sp.set("all", "1");
   const qs = sp.toString();
   return request<{ attendees: PublicAttendee[]; activeWindowMs: number }>(
     `/api/attendees${qs ? `?${qs}` : ""}`,

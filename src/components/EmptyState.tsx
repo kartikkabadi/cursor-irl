@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 export function CardSkeleton() {
   return (
     <div className="animate-pulse rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-card)] p-4">
@@ -13,8 +15,6 @@ export function CardSkeleton() {
     </div>
   );
 }
-
-import type { ReactNode } from "react";
 
 export function EmptyState({
   title,

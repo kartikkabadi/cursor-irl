@@ -27,8 +27,7 @@ export function HomePage() {
       const [list, board] = await Promise.all([
         listAttendees({
           q,
-          filter: filter === "all" ? undefined : filter,
-          all: filter === "all" || filter === "collab" || filter === "agents",
+          filter,
         }),
         getLeaderboard(),
       ]);

@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { zValidator } from "@hono/zod-validator";
+import { randomCursorColor } from "../shared/attendee";
 import {
   ACTIVE_MS,
-  CURSOR_COLORS,
   joinSchema,
   meetSchema,
   normalizeHandle,
@@ -24,6 +24,7 @@ import {
 
 type Bindings = {
   DB: D1Database;
+  KEEP_SEEDS_ACTIVE?: string;
 };
 
 type Variables = {
@@ -51,6 +52,31 @@ app.notFound((c) => {
   }
   return c.text("Not found", 404);
 });
+
+class HttpError extends Error {
+  status: 400 | 403 | 404;
+  constructor(status: 400 | 403 | 404, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function validationHook(
+  result: { success: boolean; error?: unknown },
+  c: { json: (data: unknown, status?: number) => Response },
+) {
+  if (!result.success) {
+    const issues =
+      result.error &&
+      typeof result.error === "object" &&
+      "issues" in result.error &&
+      Array.isArray((result.error as { issues: unknown }).issues)
+        ? (result.error as { issues: Array<{ message?: string }> }).issues
+        : [];
+    const message = issues[0]?.message || "Invalid request";
+    return c.json({ error: message }, 400);
+  }
+}
 
 async function getConnectionCounts(
   db: D1Database,
@@ -108,6 +134,19 @@ async function assertEditToken(
   return hash === row.edit_token_hash;
 }
 
+async function requireOwnedAttendee(
+  db: D1Database,
+  slug: string,
+  editToken: string,
+): Promise<AttendeeRow> {
+  const row = await getAttendeeBySlug(db, slug);
+  if (!row) throw new HttpError(404, "Profile not found");
+  if (!(await assertEditToken(row, editToken))) {
+    throw new HttpError(403, "Invalid edit token");
+  }
+  return row;
+}
+
 async function uniqueSlug(db: D1Database, name: string): Promise<string> {
   const base = slugify(name);
   let candidate = base;
@@ -131,12 +170,25 @@ async function uniqueCursorCode(db: D1Database): Promise<string> {
   return randomCursorCode() + randomCursorCode().slice(0, 1);
 }
 
-async function refreshSeedPresence(db: D1Database): Promise<void> {
-  // Keep demo seed attendees visible in local/dev rooms.
-  await db
-    .prepare(`UPDATE attendees SET last_seen_at = ? WHERE id LIKE 'seed_%'`)
-    .bind(Date.now())
-    .run();
+function keepSeedsActive(env: Bindings): boolean {
+  return env.KEEP_SEEDS_ACTIVE === "true";
+}
+
+function toPublicEnv(
+  row: AttendeeRow,
+  connectionCount: number,
+  now: number,
+  seedsLive: boolean,
+): PublicAttendee {
+  const person = toPublic(row, connectionCount, now);
+  if (seedsLive && row.id.startsWith("seed_")) {
+    return { ...person, isActive: true };
+  }
+  return person;
+}
+
+function filterIncludesInactive(filter: string | undefined): boolean {
+  return filter === undefined || filter === "all" || filter === "agents" || filter === "collab";
 }
 
 function matchesFilter(
@@ -144,16 +196,28 @@ function matchesFilter(
   q: string,
   filter: string | undefined,
 ): boolean {
-  if (filter === "here") {
-    if (!person.isActive) return false;
-  } else if (filter === "open") {
-    if (!person.openToMeet || !person.isActive) return false;
-  } else if (filter === "agents") {
-    const hay = `${person.project} ${person.lookingFor ?? ""}`.toLowerCase();
-    if (!/(agent|agents|autonomous|cursor)/.test(hay)) return false;
-  } else if (filter === "collab") {
-    const hay = `${person.lookingFor ?? ""} ${person.project}`.toLowerCase();
-    if (!/(collaborat|collab|co-?found|partner|jam|meet)/.test(hay)) return false;
+  switch (filter) {
+    case undefined:
+    case "all":
+      break;
+    case "here":
+      if (!person.isActive) return false;
+      break;
+    case "open":
+      if (!person.openToMeet || !person.isActive) return false;
+      break;
+    case "agents": {
+      const hay = `${person.project} ${person.lookingFor ?? ""}`.toLowerCase();
+      if (!/(agent|agents|autonomous|cursor)/.test(hay)) return false;
+      break;
+    }
+    case "collab": {
+      const hay = `${person.lookingFor ?? ""} ${person.project}`.toLowerCase();
+      if (!/(collaborat|collab|co-?found|partner|jam|meet)/.test(hay)) return false;
+      break;
+    }
+    default:
+      break;
   }
 
   if (!q) return true;
@@ -176,10 +240,9 @@ function matchesFilter(
 app.get("/api/health", (c) => c.json({ ok: true, name: "cursor-irl" }));
 
 app.get("/api/attendees", async (c) => {
-  await refreshSeedPresence(c.env.DB);
   const q = (c.req.query("q") ?? "").trim().toLowerCase();
   const filter = c.req.query("filter") ?? undefined;
-  const includeInactive = c.req.query("all") === "1";
+  const seedsLive = keepSeedsActive(c.env);
 
   const { results } = await c.env.DB.prepare(
     "SELECT * FROM attendees ORDER BY last_seen_at DESC",
@@ -193,10 +256,10 @@ app.get("/api/attendees", async (c) => {
   const now = Date.now();
 
   let people = rows.map((row) =>
-    toPublic(row, counts.get(row.id) ?? 0, now),
+    toPublicEnv(row, counts.get(row.id) ?? 0, now, seedsLive),
   );
 
-  if (!includeInactive) {
+  if (!filterIncludesInactive(filter)) {
     people = people.filter((p) => p.isActive);
   }
 
@@ -206,7 +269,7 @@ app.get("/api/attendees", async (c) => {
 });
 
 app.get("/api/leaderboard", async (c) => {
-  await refreshSeedPresence(c.env.DB);
+  const seedsLive = keepSeedsActive(c.env);
   const { results } = await c.env.DB.prepare(
     "SELECT * FROM attendees",
   ).all<AttendeeRow>();
@@ -217,7 +280,7 @@ app.get("/api/leaderboard", async (c) => {
   );
   const now = Date.now();
   const ranked = rows
-    .map((row) => toPublic(row, counts.get(row.id) ?? 0, now))
+    .map((row) => toPublicEnv(row, counts.get(row.id) ?? 0, now, seedsLive))
     .filter((p) => p.connectionCount > 0 || p.isActive)
     .sort((a, b) => b.connectionCount - a.connectionCount)
     .slice(0, 8);
@@ -226,13 +289,14 @@ app.get("/api/leaderboard", async (c) => {
 });
 
 app.get("/api/attendees/:slug", async (c) => {
-  await refreshSeedPresence(c.env.DB);
   const slug = c.req.param("slug");
+  const seedsLive = keepSeedsActive(c.env);
   const row = await getAttendeeBySlug(c.env.DB, slug);
   if (!row) return c.json({ error: "Profile not found" }, 404);
 
+  const now = Date.now();
   const counts = await getConnectionCounts(c.env.DB, [row.id]);
-  const person = toPublic(row, counts.get(row.id) ?? 0);
+  const person = toPublicEnv(row, counts.get(row.id) ?? 0, now, seedsLive);
 
   const { results: connRows } = await c.env.DB.prepare(
     `SELECT CASE WHEN attendee_a = ? THEN attendee_b ELSE attendee_a END AS other_id
@@ -252,7 +316,7 @@ app.get("/api/attendees/:slug", async (c) => {
       .all<AttendeeRow>();
     const otherCounts = await getConnectionCounts(c.env.DB, otherIds);
     connections = (others ?? []).map((o) =>
-      toPublic(o, otherCounts.get(o.id) ?? 0),
+      toPublicEnv(o, otherCounts.get(o.id) ?? 0, now, seedsLive),
     );
   }
 
@@ -275,233 +339,261 @@ app.get("/api/attendees/:slug", async (c) => {
   });
 });
 
-app.post("/api/attendees", zValidator("json", joinSchema), async (c) => {
-  const body = c.req.valid("json");
-  const now = Date.now();
-  const id = randomId("att");
-  const slug = await uniqueSlug(c.env.DB, body.name);
-  const cursorCode = await uniqueCursorCode(c.env.DB);
-  const cursorColor =
-    CURSOR_COLORS[Math.floor(Math.random() * CURSOR_COLORS.length)]!;
-  const editToken = randomEditToken();
-  const editTokenHash = await sha256Hex(editToken);
+app.post(
+  "/api/attendees",
+  zValidator("json", joinSchema, validationHook),
+  async (c) => {
+    const body = c.req.valid("json");
+    const now = Date.now();
+    const id = randomId("att");
+    const slug = await uniqueSlug(c.env.DB, body.name);
+    const cursorCode = await uniqueCursorCode(c.env.DB);
+    const cursorColor = randomCursorColor();
+    const editToken = randomEditToken();
+    const editTokenHash = await sha256Hex(editToken);
 
-  await c.env.DB.prepare(
-    `INSERT INTO attendees (
-      id, slug, name, x_handle, github_handle, avatar_url, project, looking_for,
-      outfit_clue, venue_zone, open_to_meet, cursor_color, cursor_code,
-      edit_token_hash, last_seen_at, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(
-      id,
-      slug,
-      body.name.trim(),
-      normalizeHandle(body.xHandle),
-      normalizeHandle(body.githubHandle),
-      body.avatarUrl?.trim() || null,
-      body.project.trim(),
-      body.lookingFor?.trim() || null,
-      body.outfitClue?.trim() || null,
-      body.venueZone,
-      body.openToMeet ? 1 : 0,
-      cursorColor,
-      cursorCode,
-      editTokenHash,
-      now,
-      now,
-    )
-    .run();
+    try {
+      await c.env.DB.prepare(
+        `INSERT INTO attendees (
+          id, slug, name, x_handle, github_handle, avatar_url, project, looking_for,
+          outfit_clue, venue_zone, open_to_meet, cursor_color, cursor_code,
+          edit_token_hash, last_seen_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(
+          id,
+          slug,
+          body.name.trim(),
+          normalizeHandle(body.xHandle),
+          normalizeHandle(body.githubHandle),
+          body.avatarUrl?.trim() || null,
+          body.project.trim(),
+          body.lookingFor?.trim() || null,
+          body.outfitClue?.trim() || null,
+          body.venueZone,
+          body.openToMeet ? 1 : 0,
+          cursorColor,
+          cursorCode,
+          editTokenHash,
+          now,
+          now,
+        )
+        .run();
+    } catch (err) {
+      console.error(err);
+      return c.json({ error: "Could not create profile. Try again." }, 409);
+    }
 
-  const row = await getAttendeeById(c.env.DB, id);
-  if (!row) return c.json({ error: "Failed to create profile" }, 500);
+    const row = await getAttendeeById(c.env.DB, id);
+    if (!row) return c.json({ error: "Failed to create profile" }, 500);
 
-  return c.json(
-    {
-      attendee: toPublic(row, 0, now),
-      editToken,
-    },
-    201,
-  );
-});
+    return c.json(
+      {
+        attendee: toPublic(row, 0, now),
+        editToken,
+      },
+      201,
+    );
+  },
+);
 
 app.patch(
   "/api/attendees/:slug",
-  zValidator("json", updateSchema),
+  zValidator("json", updateSchema, validationHook),
   async (c) => {
-    const slug = c.req.param("slug");
-    const body = c.req.valid("json");
-    const row = await getAttendeeBySlug(c.env.DB, slug);
-    if (!row) return c.json({ error: "Profile not found" }, 404);
-    if (!(await assertEditToken(row, body.editToken))) {
-      return c.json({ error: "Invalid edit token" }, 403);
-    }
+    try {
+      const slug = c.req.param("slug");
+      const body = c.req.valid("json");
+      const row = await requireOwnedAttendee(c.env.DB, slug, body.editToken);
 
-    const next = {
-      name: body.name?.trim() ?? row.name,
-      x_handle:
-        body.xHandle !== undefined
-          ? normalizeHandle(body.xHandle)
-          : row.x_handle,
-      github_handle:
-        body.githubHandle !== undefined
-          ? normalizeHandle(body.githubHandle)
-          : row.github_handle,
-      avatar_url:
-        body.avatarUrl !== undefined
-          ? body.avatarUrl.trim() || null
-          : row.avatar_url,
-      project: body.project?.trim() ?? row.project,
-      looking_for:
-        body.lookingFor !== undefined
-          ? body.lookingFor.trim() || null
-          : row.looking_for,
-      outfit_clue:
-        body.outfitClue !== undefined
-          ? body.outfitClue.trim() || null
-          : row.outfit_clue,
-      venue_zone: body.venueZone ?? row.venue_zone,
-      open_to_meet:
-        body.openToMeet !== undefined
-          ? body.openToMeet
-            ? 1
-            : 0
-          : row.open_to_meet,
-    };
+      const next = {
+        name: body.name?.trim() ?? row.name,
+        x_handle:
+          body.xHandle !== undefined
+            ? normalizeHandle(body.xHandle)
+            : row.x_handle,
+        github_handle:
+          body.githubHandle !== undefined
+            ? normalizeHandle(body.githubHandle)
+            : row.github_handle,
+        avatar_url:
+          body.avatarUrl !== undefined
+            ? body.avatarUrl.trim() || null
+            : row.avatar_url,
+        project: body.project?.trim() ?? row.project,
+        looking_for:
+          body.lookingFor !== undefined
+            ? body.lookingFor.trim() || null
+            : row.looking_for,
+        outfit_clue:
+          body.outfitClue !== undefined
+            ? body.outfitClue.trim() || null
+            : row.outfit_clue,
+        venue_zone: body.venueZone ?? row.venue_zone,
+        open_to_meet:
+          body.openToMeet !== undefined
+            ? body.openToMeet
+              ? 1
+              : 0
+            : row.open_to_meet,
+      };
 
-    await c.env.DB.prepare(
-      `UPDATE attendees SET
-        name = ?, x_handle = ?, github_handle = ?, avatar_url = ?, project = ?,
-        looking_for = ?, outfit_clue = ?, venue_zone = ?, open_to_meet = ?,
-        last_seen_at = ?
-       WHERE id = ?`,
-    )
-      .bind(
-        next.name,
-        next.x_handle,
-        next.github_handle,
-        next.avatar_url,
-        next.project,
-        next.looking_for,
-        next.outfit_clue,
-        next.venue_zone,
-        next.open_to_meet,
-        Date.now(),
-        row.id,
+      await c.env.DB.prepare(
+        `UPDATE attendees SET
+          name = ?, x_handle = ?, github_handle = ?, avatar_url = ?, project = ?,
+          looking_for = ?, outfit_clue = ?, venue_zone = ?, open_to_meet = ?,
+          last_seen_at = ?
+         WHERE id = ?`,
       )
-      .run();
+        .bind(
+          next.name,
+          next.x_handle,
+          next.github_handle,
+          next.avatar_url,
+          next.project,
+          next.looking_for,
+          next.outfit_clue,
+          next.venue_zone,
+          next.open_to_meet,
+          Date.now(),
+          row.id,
+        )
+        .run();
 
-    const updated = await getAttendeeById(c.env.DB, row.id);
-    const counts = await getConnectionCounts(c.env.DB, [row.id]);
-    return c.json({
-      attendee: toPublic(updated!, counts.get(row.id) ?? 0),
-    });
+      const updated = await getAttendeeById(c.env.DB, row.id);
+      const counts = await getConnectionCounts(c.env.DB, [row.id]);
+      return c.json({
+        attendee: toPublic(updated!, counts.get(row.id) ?? 0),
+      });
+    } catch (err) {
+      if (err instanceof HttpError) {
+        return c.json({ error: err.message }, err.status);
+      }
+      throw err;
+    }
   },
 );
 
 app.post(
   "/api/attendees/:slug/heartbeat",
-  zValidator("json", presenceSchema),
+  zValidator("json", presenceSchema, validationHook),
   async (c) => {
-    const slug = c.req.param("slug");
-    const { editToken } = c.req.valid("json");
-    const row = await getAttendeeBySlug(c.env.DB, slug);
-    if (!row) return c.json({ error: "Profile not found" }, 404);
-    if (!(await assertEditToken(row, editToken))) {
-      return c.json({ error: "Invalid edit token" }, 403);
+    try {
+      const slug = c.req.param("slug");
+      const { editToken } = c.req.valid("json");
+      const row = await requireOwnedAttendee(c.env.DB, slug, editToken);
+      const now = Date.now();
+      await c.env.DB.prepare(
+        "UPDATE attendees SET last_seen_at = ? WHERE id = ?",
+      )
+        .bind(now, row.id)
+        .run();
+      return c.json({ ok: true, lastSeenAt: now });
+    } catch (err) {
+      if (err instanceof HttpError) {
+        return c.json({ error: err.message }, err.status);
+      }
+      throw err;
     }
-    const now = Date.now();
-    await c.env.DB.prepare(
-      "UPDATE attendees SET last_seen_at = ? WHERE id = ?",
-    )
-      .bind(now, row.id)
-      .run();
-    return c.json({ ok: true, lastSeenAt: now });
   },
 );
 
 app.post(
   "/api/attendees/:slug/leave",
-  zValidator("json", presenceSchema),
+  zValidator("json", presenceSchema, validationHook),
   async (c) => {
-    const slug = c.req.param("slug");
-    const { editToken } = c.req.valid("json");
-    const row = await getAttendeeBySlug(c.env.DB, slug);
-    if (!row) return c.json({ error: "Profile not found" }, 404);
-    if (!(await assertEditToken(row, editToken))) {
-      return c.json({ error: "Invalid edit token" }, 403);
+    try {
+      const slug = c.req.param("slug");
+      const { editToken } = c.req.valid("json");
+      const row = await requireOwnedAttendee(c.env.DB, slug, editToken);
+      const leftAt = Date.now() - ACTIVE_MS - 1000;
+      await c.env.DB.prepare(
+        "UPDATE attendees SET last_seen_at = ? WHERE id = ?",
+      )
+        .bind(leftAt, row.id)
+        .run();
+      return c.json({ ok: true });
+    } catch (err) {
+      if (err instanceof HttpError) {
+        return c.json({ error: err.message }, err.status);
+      }
+      throw err;
     }
-    const leftAt = Date.now() - ACTIVE_MS - 1000;
-    await c.env.DB.prepare(
-      "UPDATE attendees SET last_seen_at = ? WHERE id = ?",
-    )
-      .bind(leftAt, row.id)
-      .run();
-    return c.json({ ok: true });
   },
 );
 
 app.delete(
   "/api/attendees/:slug",
-  zValidator("json", presenceSchema),
+  zValidator("json", presenceSchema, validationHook),
   async (c) => {
-    const slug = c.req.param("slug");
-    const { editToken } = c.req.valid("json");
-    const row = await getAttendeeBySlug(c.env.DB, slug);
-    if (!row) return c.json({ error: "Profile not found" }, 404);
-    if (!(await assertEditToken(row, editToken))) {
-      return c.json({ error: "Invalid edit token" }, 403);
+    try {
+      const slug = c.req.param("slug");
+      const { editToken } = c.req.valid("json");
+      const row = await requireOwnedAttendee(c.env.DB, slug, editToken);
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          "DELETE FROM connections WHERE attendee_a = ? OR attendee_b = ?",
+        ).bind(row.id, row.id),
+        c.env.DB.prepare("DELETE FROM attendees WHERE id = ?").bind(row.id),
+      ]);
+      return c.json({ ok: true });
+    } catch (err) {
+      if (err instanceof HttpError) {
+        return c.json({ error: err.message }, err.status);
+      }
+      throw err;
     }
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        "DELETE FROM connections WHERE attendee_a = ? OR attendee_b = ?",
-      ).bind(row.id, row.id),
-      c.env.DB.prepare("DELETE FROM attendees WHERE id = ?").bind(row.id),
-    ]);
-    return c.json({ ok: true });
   },
 );
 
 app.post(
   "/api/attendees/:slug/meet",
-  zValidator("json", meetSchema),
+  zValidator("json", meetSchema, validationHook),
   async (c) => {
-    const slug = c.req.param("slug");
-    const body = c.req.valid("json");
-    const target = await getAttendeeBySlug(c.env.DB, slug);
-    if (!target) return c.json({ error: "Profile not found" }, 404);
+    try {
+      const slug = c.req.param("slug");
+      const body = c.req.valid("json");
+      const target = await getAttendeeBySlug(c.env.DB, slug);
+      if (!target) return c.json({ error: "Profile not found" }, 404);
 
-    const me = await getAttendeeById(c.env.DB, body.fromAttendeeId);
-    if (!me) return c.json({ error: "Your profile was not found" }, 404);
-    if (!(await assertEditToken(me, body.editToken))) {
-      return c.json({ error: "Invalid edit token" }, 403);
-    }
-    if (me.id === target.id) {
-      return c.json({ error: "You already know yourself" }, 400);
-    }
+      const me = await getAttendeeById(c.env.DB, body.fromAttendeeId);
+      if (!me) return c.json({ error: "Your profile was not found" }, 404);
+      if (!(await assertEditToken(me, body.editToken))) {
+        return c.json({ error: "Invalid edit token" }, 403);
+      }
+      if (me.id === target.id) {
+        return c.json({ error: "You already know yourself" }, 400);
+      }
 
-    const [a, b] = pairKey(me.id, target.id);
-    const existing = await c.env.DB.prepare(
-      "SELECT id FROM connections WHERE attendee_a = ? AND attendee_b = ?",
-    )
-      .bind(a, b)
-      .first();
-
-    if (!existing) {
-      await c.env.DB.prepare(
-        "INSERT INTO connections (id, attendee_a, attendee_b, created_at) VALUES (?, ?, ?, ?)",
+      const [a, b] = pairKey(me.id, target.id);
+      const existing = await c.env.DB.prepare(
+        "SELECT id FROM connections WHERE attendee_a = ? AND attendee_b = ?",
       )
-        .bind(randomId("conn"), a, b, Date.now())
-        .run();
-    }
+        .bind(a, b)
+        .first();
 
-    const counts = await getConnectionCounts(c.env.DB, [me.id, target.id]);
-    return c.json({
-      ok: true,
-      alreadyMet: Boolean(existing),
-      me: toPublic(me, counts.get(me.id) ?? 0),
-      them: toPublic(target, counts.get(target.id) ?? 0),
-    });
+      if (!existing) {
+        await c.env.DB.prepare(
+          `INSERT OR IGNORE INTO connections (id, attendee_a, attendee_b, created_at)
+           VALUES (?, ?, ?, ?)`,
+        )
+          .bind(randomId("conn"), a, b, Date.now())
+          .run();
+      }
+
+      const counts = await getConnectionCounts(c.env.DB, [me.id, target.id]);
+      return c.json({
+        ok: true,
+        alreadyMet: Boolean(existing),
+        me: toPublic(me, counts.get(me.id) ?? 0),
+        them: toPublic(target, counts.get(target.id) ?? 0),
+      });
+    } catch (err) {
+      if (err instanceof HttpError) {
+        return c.json({ error: err.message }, err.status);
+      }
+      throw err;
+    }
   },
 );
 
