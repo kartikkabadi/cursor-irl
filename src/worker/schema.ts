@@ -20,9 +20,7 @@ export const createAttendeeSchema = z.object({
   variant: z.number().int().min(0, 'Pick one of the identity options.').max(DITHERPRINT_CANDIDATE_COUNT - 1, 'Pick one of the identity options.'),
 });
 
-export const updateAttendeeSchema = createAttendeeSchema.partial().extend({
-  present: z.boolean().optional(),
-});
+export const updateAttendeeSchema = createAttendeeSchema.partial().strict();
 
 export const connectionSchema = z.object({
   target_id: z.string().uuid('That profile is not valid.'),

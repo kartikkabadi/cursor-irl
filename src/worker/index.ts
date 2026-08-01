@@ -40,14 +40,9 @@ type AttendeeRow = {
 };
 
 const app = new Hono<Env>();
-const PRESENCE_WINDOW_SECONDS = 10 * 60;
 
 function now(): number {
   return Math.floor(Date.now() / 1000);
-}
-
-function isActive(lastSeenAt: number): boolean {
-  return lastSeenAt > now() - PRESENCE_WINDOW_SECONDS;
 }
 
 function publicAttendee(row: AttendeeRow): Attendee {
@@ -70,9 +65,7 @@ function publicAttendee(row: AttendeeRow): Attendee {
     open_to_meet: Boolean(row.open_to_meet),
     cursor_color: row.cursor_color,
     cursor_code: row.cursor_code,
-    last_seen_at: row.last_seen_at,
     created_at: row.created_at,
-    active_now: isActive(row.last_seen_at),
     connection_count: Number(row.connection_count ?? 0),
   };
 }
@@ -149,7 +142,7 @@ const CONNECTION_COUNT_SQL = `(
   SELECT COUNT(*) FROM connections c WHERE c.attendee_a = a.id OR c.attendee_b = a.id
 ) AS connection_count`;
 
-function attendeeSelect(extraWhere = '', orderBy = 'a.last_seen_at DESC, a.created_at DESC') {
+function attendeeSelect(extraWhere = '', orderBy = 'a.created_at DESC') {
   return `
     SELECT a.*, ${CONNECTION_COUNT_SQL}
     FROM attendees a
@@ -193,9 +186,9 @@ app.get('/api/attendees', async (c) => {
   if (filter === 'agents') clauses.push(`LOWER(COALESCE(a.project, '') || ' ' || COALESCE(a.looking_for, '')) LIKE '%agent%'`);
   if (filter === 'collab') clauses.push(`LOWER(COALESCE(a.looking_for, '')) LIKE '%collab%'`);
 
-  const querySql = attendeeSelect(clauses.length ? ` AND ${clauses.join(' AND ')}` : '', 'a.last_seen_at DESC, connection_count DESC, a.created_at DESC');
+  const querySql = attendeeSelect(clauses.length ? ` AND ${clauses.join(' AND ')}` : '', 'connection_count DESC, a.created_at DESC');
   const result = await c.env.DB.prepare(querySql).bind(...params).all<AttendeeRow>();
-  return c.json({ attendees: (result.results ?? []).map(publicAttendee), active_window_minutes: 10 });
+  return c.json({ attendees: (result.results ?? []).map(publicAttendee) });
 });
 
 app.get('/api/leaderboard', async (c) => {
@@ -283,7 +276,6 @@ app.patch('/api/attendees/:id', async (c) => {
     ['outfit_clue', 'outfit_clue', (value) => String(value).trim() || null],
     ['venue_zone', 'venue_zone', (value) => String(value)],
     ['open_to_meet', 'open_to_meet', (value) => value ? 1 : 0],
-    ['present', 'last_seen_at', (value) => value ? now() : 0],
   ];
   for (const [inputKey, column, transform] of fields) {
     if (inputKey in input && input[inputKey] !== undefined) {

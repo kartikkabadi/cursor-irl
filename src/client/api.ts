@@ -45,7 +45,7 @@ export async function getIdentityPreview() {
 export async function listAttendees(query = '', filter = 'all', signal?: AbortSignal) {
   const params = new URLSearchParams({ filter });
   if (query) params.set('q', query);
-  return request<{ attendees: Attendee[]; active_window_minutes: number }>(`/api/attendees?${params}`, { signal });
+  return request<{ attendees: Attendee[] }>(`/api/attendees?${params}`, { signal });
 }
 
 export async function getLeaderboard(signal?: AbortSignal) {

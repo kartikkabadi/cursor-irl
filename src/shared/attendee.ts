@@ -34,9 +34,7 @@ export type Attendee = {
   open_to_meet: boolean;
   cursor_color: string;
   cursor_code: string;
-  last_seen_at: number;
   created_at: number;
-  active_now: boolean;
   connection_count: number;
 };
 
@@ -64,9 +62,7 @@ export type CreateAttendeeInput = {
   variant: number;
 };
 
-export type UpdateAttendeeInput = Partial<CreateAttendeeInput> & {
-  present?: boolean;
-};
+export type UpdateAttendeeInput = Partial<CreateAttendeeInput>;
 
 export type CreateAttendeeResponse = {
   attendee: Attendee;

@@ -8,7 +8,7 @@ Cursor IRL is a live, low-friction find-me room for Cursor Roadshow Bangalore. P
 
 ## What is included
 
-- One shared room list with search and optional interest filters. Heartbeat freshness never hides a published profile.
+- One shared room list with search and optional interest filters. A published profile stays visible until its owner deletes it.
 - Low-friction join flow centered on X identity.
 - Deterministic Ditherprint cursor patterns generated from a server-issued profile ID and variant. No AI-generated avatars or seeded attendee rows.
 - Public profile links with QR codes, “I met this person” connections, and optional public Cursor token totals.

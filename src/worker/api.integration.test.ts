@@ -99,18 +99,9 @@ describe('cursor-irl API integration', () => {
     expect(status).toBe(401);
   });
 
-  it('9-11: heartbeat, leave, and return presence', async () => {
-    const heart = await api(`/api/attendees/${attendeeA!.attendee.id}`, { method: 'PATCH', body: JSON.stringify({ present: true }) }, attendeeA!.edit_token);
-    expect(heart.status).toBe(200);
-    expect((heart.body.attendee as Attendee).active_now).toBe(true);
-
-    const leave = await api(`/api/attendees/${attendeeA!.attendee.id}`, { method: 'PATCH', body: JSON.stringify({ present: false }) }, attendeeA!.edit_token);
-    expect(leave.status).toBe(200);
-    expect((leave.body.attendee as Attendee).active_now).toBe(false);
-
-    const back = await api(`/api/attendees/${attendeeA!.attendee.id}`, { method: 'PATCH', body: JSON.stringify({ present: true }) }, attendeeA!.edit_token);
-    expect(back.status).toBe(200);
-    expect((back.body.attendee as Attendee).active_now).toBe(true);
+  it('9: rejects the removed presence field', async () => {
+    const response = await api(`/api/attendees/${attendeeA!.attendee.id}`, { method: 'PATCH', body: JSON.stringify({ present: true }) }, attendeeA!.edit_token);
+    expect(response.status).toBe(422);
   });
 
   it('12: edit project and clue', async () => {
@@ -153,12 +144,12 @@ describe('cursor-irl API integration', () => {
     const found = (body.attendees as Attendee[]).map((attendee) => attendee.id);
     expect(found).toContain(attendeeA!.attendee.id);
 
-    const { status } = await api(`/api/attendees/${attendeeB!.attendee.id}`, { method: 'PATCH', body: JSON.stringify({ present: false }) }, attendeeB!.edit_token);
-    expect(status).toBe(200);
     const { body: roomBody } = await api('/api/attendees?filter=all');
     const roomIds = (roomBody.attendees as Attendee[]).map((attendee) => attendee.id);
     expect(roomIds).toContain(attendeeA!.attendee.id);
     expect(roomIds).toContain(attendeeB!.attendee.id);
+    expect(roomBody.active_window_minutes).toBeUndefined();
+    expect((roomBody.attendees as Array<Record<string, unknown>>).every((attendee) => !('active_now' in attendee) && !('last_seen_at' in attendee))).toBe(true);
   });
 
   it('public responses never expose the edit token hash', async () => {
