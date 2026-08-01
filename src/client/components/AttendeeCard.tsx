@@ -19,7 +19,7 @@ export function AttendeeCard({ attendee, index = 0 }: { attendee: Attendee; inde
       <div className="pointer-events-none absolute right-3 top-16 opacity-95 transition duration-300 group-hover:rotate-3 group-hover:scale-105"><CursorPointer color={attendee.cursor_color} code={attendee.cursor_code} size="md" /></div>
       <div className="relative max-w-[72%] space-y-2">
         <p className="text-base font-medium leading-snug tracking-[-0.025em]">{attendee.project}</p>
-        <div className="flex flex-wrap gap-1.5"><StatusPill active={attendee.active_now}>{attendee.active_now ? 'here now' : 'away'}</StatusPill>{attendee.open_to_meet ? <StatusPill>open to meet</StatusPill> : null}</div>
+        <div className="flex flex-wrap gap-1.5">{attendee.open_to_meet ? <StatusPill>open to meet</StatusPill> : null}</div>
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-[var(--line)] pt-3 text-[11px] text-[var(--muted)]"><span className="inline-flex min-w-0 items-center gap-1.5 truncate"><MapPin size={13} />{attendee.venue_zone ?? 'somewhere in the room'}</span><span className="inline-flex shrink-0 items-center gap-1.5 font-mono"><UsersThree size={13} />{attendee.connection_count}</span></div>
     </div>

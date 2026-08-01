@@ -7,10 +7,11 @@ const optionalText = (max: number) => z.string().trim().max(max).optional().or(z
 export const createAttendeeSchema = z.object({
   name: z.string().trim().min(2, 'Add your name.').max(80),
   x_handle: optionalText(50),
+  cursor_handle: optionalText(50),
   github_handle: optionalText(50),
   avatar_mode: z.enum(AVATAR_MODES).optional().default('ditherprint'),
   avatar_url: z.string().trim().url('Use a full image URL.').max(500).optional().or(z.literal('')),
-  project: z.string().trim().min(3, 'Tell the room what you are building.').max(180),
+  project: z.string().trim().max(180),
   looking_for: optionalText(180),
   outfit_clue: optionalText(160),
   venue_zone: z.enum(VENUE_ZONES).optional(),

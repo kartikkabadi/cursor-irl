@@ -8,11 +8,12 @@ Cursor IRL is a live, low-friction find-me room for Cursor Roadshow Bangalore. P
 
 ## What is included
 
-- Live room with search and presence filters.
+- One shared room list with search and optional interest filters. Heartbeat freshness never hides a published profile.
 - Low-friction join flow centered on X identity.
 - Deterministic Ditherprint cursor patterns generated from a server-issued profile ID and variant. No AI-generated avatars or seeded attendee rows.
-- Public profile links with QR codes, “I met this person” connections, and presence controls.
-- Downloadable 1200 × 630 share cards and pre-filled Post on X links. Browsers cannot attach a downloaded image to an X composer automatically, so image attachment is an intentional final step.
+- Public profile links with QR codes, “I met this person” connections, and optional public Cursor token totals.
+- One-step X sharing: iPhone and Android can attach the PNG through the native share sheet when supported; desktop downloads the 1200 × 630 card and opens a pre-filled X post for the final attachment.
+- Optional Cursor handles link to the attendee's public `https://cursor.com/@handle` profile. Cursor usage and token data are never copied or invented.
 - Profile-specific Open Graph and Twitter metadata, with a Worker-served social preview image.
 
 ## Stack

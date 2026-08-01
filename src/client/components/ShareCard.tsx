@@ -3,7 +3,7 @@ import { DownloadSimple, XLogo } from '@phosphor-icons/react';
 import type { DitherprintIdentity } from '../../shared/ditherprint';
 import { ditherprintSvg, generateDitherprintIdentity } from '../../shared/ditherprint';
 import type { Attendee } from '../../shared/attendee';
-import { Button, buttonClass } from './ui';
+import { Button } from './ui';
 
 const CARD_W = 1200;
 const CARD_H = 630;
@@ -71,8 +71,30 @@ export function shareCardSvg(attendee: Attendee, identity: DitherprintIdentity, 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_W}" height="${CARD_H}" viewBox="0 0 ${CARD_W} ${CARD_H}">${elements.join('')}</svg>`;
 }
 
-export function downloadShareCard(svg: string, filename = 'cursor-irl-card.svg') {
-  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+async function svgToPng(svg: string): Promise<Blob> {
+  const source = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error('The share card could not be rendered.'));
+      element.src = source;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = CARD_W;
+    canvas.height = CARD_H;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas is unavailable.');
+    context.drawImage(image, 0, 0, CARD_W, CARD_H);
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('The share card could not be encoded.')), 'image/png');
+    });
+  } finally {
+    URL.revokeObjectURL(source);
+  }
+}
+
+function downloadShareCard(blob: Blob, filename = 'cursor-irl-card.png') {
   const href = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = href;
@@ -86,6 +108,7 @@ export function downloadShareCard(svg: string, filename = 'cursor-irl-card.svg')
 export function ShareCard({ attendee, url, shareText }: { attendee: Attendee; url: string; shareText?: string }) {
   const [identity, setIdentity] = useState<DitherprintIdentity | null>(null);
   const [notice, setNotice] = useState('');
+  const [sharing, setSharing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,6 +124,42 @@ export function ShareCard({ attendee, url, shareText }: { attendee: Attendee; ur
   const postText = shareText ?? `I'm at Cursor Roadshow Bangalore. Building: ${attendee.project} Come say hi: ${url}`;
   const postUrl = `https://x.com/intent/post?text=${encodeURIComponent(postText)}`;
 
+  async function shareOnX() {
+    setSharing(true);
+    setNotice('');
+    try {
+      const png = await svgToPng(svg);
+      const file = new File([png], `cursor-irl-${attendee.slug}.png`, { type: 'image/png' });
+      const canShareFile = typeof navigator.canShare !== 'function' || navigator.canShare({ files: [file] });
+      if (typeof navigator.share === 'function' && canShareFile) {
+        try {
+          await navigator.share({ title: `${attendee.name} · Cursor IRL`, text: postText, url, files: [file] });
+          setNotice('Share sheet opened. Choose X to post the card.');
+        } catch {
+          // The user cancelled the native share sheet; do not open another surface.
+        }
+        return;
+      }
+      downloadShareCard(png, file.name);
+      window.open(postUrl, '_blank', 'noopener,noreferrer');
+      setNotice('Card downloaded and X opened. Attach the PNG to the post.');
+    } catch {
+      window.open(postUrl, '_blank', 'noopener,noreferrer');
+      setNotice('X opened with your profile link.');
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  async function downloadPng() {
+    try {
+      downloadShareCard(await svgToPng(svg), `cursor-irl-${attendee.slug}.png`);
+      setNotice('PNG downloaded.');
+    } catch {
+      setNotice('Could not download the card on this device.');
+    }
+  }
+
   return <div className="space-y-4">
     <div
       role="img"
@@ -109,12 +168,14 @@ export function ShareCard({ attendee, url, shareText }: { attendee: Attendee; ur
       dangerouslySetInnerHTML={{ __html: svg }}
     />
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-xs leading-relaxed text-[var(--muted)]">Download the 1200 × 630 card, then attach it to your X post. The button pre-fills the text and profile link.</p>
+      <p className="text-xs leading-relaxed text-[var(--muted)]">Share the card on X in one step. iPhone and Android can attach the PNG through the share sheet; desktop downloads it and opens a pre-filled post.</p>
       <div className="flex flex-col gap-2 sm:flex-row">
-        <Button variant="secondary" onClick={() => { downloadShareCard(shareCardSvg(attendee, identity, url), `cursor-irl-${attendee.slug}.svg`); setNotice('Card downloaded.'); }}>
-          <DownloadSimple size={16} /> Download card
+        <Button variant="primary" onClick={() => void shareOnX()} loading={sharing} disabled={sharing}>
+          <XLogo size={16} /> Share on X
         </Button>
-        <a href={postUrl} target="_blank" rel="noreferrer" className={buttonClass('primary')}><XLogo size={16} /> Post on X</a>
+        <Button variant="secondary" onClick={() => void downloadPng()} disabled={sharing}>
+          <DownloadSimple size={16} /> Download image
+        </Button>
       </div>
     </div>
     {notice ? <p className="text-xs font-semibold text-[#2F7D64]">{notice}</p> : null}

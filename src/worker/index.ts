@@ -4,6 +4,7 @@ import type { Attendee, AttendeeConnection, AvatarMode, CreateAttendeeInput, Lea
 import { randomId, randomToken, hashToken } from './crypto';
 import { connectionSchema, createAttendeeSchema, updateAttendeeSchema } from './schema';
 import { DITHERPRINT_EVENT_ID, generateDitherprintCandidates, generateDitherprintIdentity } from '../shared/ditherprint';
+import { fetchCursorTokens } from './cursor-profile';
 
 type Env = {
   Bindings: {
@@ -19,6 +20,7 @@ type AttendeeRow = {
   slug: string;
   name: string;
   x_handle: string | null;
+  cursor_handle: string | null;
   github_handle: string | null;
   avatar_mode: string;
   avatar_variant: number;
@@ -53,8 +55,9 @@ function publicAttendee(row: AttendeeRow): Attendee {
     id: row.id,
     slug: row.slug,
     name: row.name,
-    x_handle: row.x_handle,
-    github_handle: row.github_handle,
+    x_handle: normalizeHandle(row.x_handle ?? undefined),
+    cursor_handle: normalizeHandle(row.cursor_handle ?? undefined),
+    github_handle: normalizeHandle(row.github_handle ?? undefined),
     avatar_mode: row.avatar_mode as AvatarMode,
     avatar_variant: Number(row.avatar_variant),
     avatar_algorithm_version: row.avatar_algorithm_version,
@@ -85,7 +88,16 @@ function jsonError(c: Context<Env>, status: 400 | 401 | 404 | 409 | 422 | 500, m
 
 function normalizeHandle(value?: string): string | null {
   const normalized = value?.trim().replace(/^@+/, '');
-  return normalized ? normalized : null;
+  if (!normalized) return null;
+  const urlValue = /^https?:\/\//i.test(normalized) ? normalized : `https://${normalized}`;
+  try {
+    const url = new URL(urlValue);
+    const host = url.hostname.toLowerCase();
+    if (['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com', 'cursor.com', 'www.cursor.com', 'github.com', 'www.github.com'].includes(host)) {
+      return url.pathname.split('/').filter(Boolean)[0]?.replace(/^@+/, '') || null;
+    }
+  } catch { /* keep a plain handle below */ }
+  return normalized.split(/[/?#]/, 1)[0] || null;
 }
 
 function slugify(name: string): string {
@@ -158,21 +170,28 @@ app.post('/api/identity-preview', async (c) => {
   });
 });
 
+app.get('/api/cursor/:handle', async (c) => {
+  const handle = normalizeHandle(c.req.param('handle'));
+  if (!handle || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,49}$/.test(handle)) return jsonError(c, 422, 'That Cursor handle is not valid.');
+  const tokens = await fetchCursorTokens(handle);
+  return c.json({ handle, profile_url: `https://cursor.com/@${handle}`, tokens, available: tokens !== null }, 200, {
+    'cache-control': 'public, max-age=300',
+  });
+});
+
 app.get('/api/attendees', async (c) => {
   const query = c.req.query('q')?.trim() ?? '';
-  const filter = c.req.query('filter') ?? 'here';
+  const filter = c.req.query('filter') ?? 'all';
   const params: string[] = [];
   const clauses: string[] = [];
 
   if (query) {
     params.push(`%${query.toLowerCase()}%`);
-    clauses.push(`LOWER(COALESCE(a.name, '') || ' ' || COALESCE(a.x_handle, '') || ' ' || COALESCE(a.github_handle, '') || ' ' || COALESCE(a.project, '') || ' ' || COALESCE(a.looking_for, '') || ' ' || COALESCE(a.outfit_clue, '') || ' ' || COALESCE(a.venue_zone, '')) LIKE ?${params.length}`);
+    clauses.push(`LOWER(COALESCE(a.name, '') || ' ' || COALESCE(a.x_handle, '') || ' ' || COALESCE(a.cursor_handle, '') || ' ' || COALESCE(a.github_handle, '') || ' ' || COALESCE(a.project, '') || ' ' || COALESCE(a.looking_for, '') || ' ' || COALESCE(a.outfit_clue, '') || ' ' || COALESCE(a.venue_zone, '')) LIKE ?${params.length}`);
   }
   if (filter === 'open') clauses.push('a.open_to_meet = 1');
   if (filter === 'agents') clauses.push(`LOWER(COALESCE(a.project, '') || ' ' || COALESCE(a.looking_for, '')) LIKE '%agent%'`);
   if (filter === 'collab') clauses.push(`LOWER(COALESCE(a.looking_for, '')) LIKE '%collab%'`);
-  if (filter === 'here') clauses.push(`a.last_seen_at > ?${params.length + 1}`);
-  if (filter === 'here') params.push(String(now() - PRESENCE_WINDOW_SECONDS));
 
   const querySql = attendeeSelect(clauses.length ? ` AND ${clauses.join(' AND ')}` : '', 'a.last_seen_at DESC, connection_count DESC, a.created_at DESC');
   const result = await c.env.DB.prepare(querySql).bind(...params).all<AttendeeRow>();
@@ -219,12 +238,12 @@ app.post('/api/attendees', async (c) => {
 
   const insert = await c.env.DB.prepare(`
     INSERT INTO attendees (
-      id, slug, name, x_handle, github_handle, avatar_mode, avatar_variant, avatar_algorithm_version,
+      id, slug, name, x_handle, cursor_handle, github_handle, avatar_mode, avatar_variant, avatar_algorithm_version,
       avatar_image_ref, avatar_url, project, looking_for, outfit_clue, venue_zone, open_to_meet,
       cursor_color, cursor_code, edit_token_hash, last_seen_at, created_at
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
   `).bind(
-    id, slug, input.name.trim(), normalizeHandle(input.x_handle), normalizeHandle(input.github_handle),
+    id, slug, input.name.trim(), normalizeHandle(input.x_handle), normalizeHandle(input.cursor_handle), normalizeHandle(input.github_handle),
     avatarMode, identity.variant, identity.algorithm_version, null,
     input.avatar_url || null, input.project.trim(), input.looking_for?.trim() || null,
     input.outfit_clue?.trim() || null, input.venue_zone ?? null, input.open_to_meet ? 1 : 0,
@@ -255,6 +274,7 @@ app.patch('/api/attendees/:id', async (c) => {
   const fields: Array<[keyof typeof input, string, (value: unknown) => string | number | null]> = [
     ['name', 'name', (value) => String(value).trim()],
     ['x_handle', 'x_handle', (value) => normalizeHandle(String(value))],
+    ['cursor_handle', 'cursor_handle', (value) => normalizeHandle(String(value))],
     ['github_handle', 'github_handle', (value) => normalizeHandle(String(value))],
     ['avatar_mode', 'avatar_mode', (value) => String(value)],
     ['avatar_url', 'avatar_url', (value) => String(value).trim() || null],
@@ -322,22 +342,28 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-const OG_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630"><rect width="1200" height="630" fill="#f7f7f4"/><rect width="1200" height="14" fill="#26251e"/><rect y="616" width="1200" height="14" fill="#f54e00"/><rect x="84" y="112" width="340" height="340" fill="#e9e7e0" stroke="#26251e" stroke-width="3"/><path d="M165 170l116 100-49 8 29 84-27 10-31-84-35 35z" fill="#26251e"/><text x="84" y="510" font-family="monospace" font-size="24" letter-spacing="5" fill="#6d6b62">CURSOR ROADSHOW / BANGALORE</text><text x="520" y="170" font-family="Arial, sans-serif" font-size="78" font-weight="700" letter-spacing="-3" fill="#26251e">Cursor IRL</text><text x="520" y="270" font-family="Arial, sans-serif" font-size="38" fill="#26251e">Turn handles into</text><text x="520" y="320" font-family="Arial, sans-serif" font-size="38" fill="#26251e">handshakes.</text><text x="520" y="410" font-family="monospace" font-size="22" letter-spacing="2" fill="#f54e00">FIND THE HUMANS BEHIND THE HANDLES</text></svg>`;
+async function socialPreviewImage(c: Context<Env>) {
+  const assetUrl = new URL('/cursor-irl-og.png', c.req.url);
+  const asset = await c.env.ASSETS.fetch(new Request(assetUrl));
+  if (!asset.ok) return new Response('Preview image unavailable.', { status: 503 });
+  const headers = new Headers(asset.headers);
+  headers.set('content-type', 'image/png');
+  headers.set('cache-control', 'public, max-age=3600');
+  return new Response(asset.body, { status: 200, headers });
+}
 
-app.get('/og', (c) => new Response(OG_SVG, { headers: { 'content-type': 'image/svg+xml; charset=UTF-8', 'cache-control': 'public, max-age=3600' } }));
+app.get('/og.png', socialPreviewImage);
 
-app.get('/p/:slug', async (c) => {
+async function profilePage(c: Context<Env>) {
   const row = await c.env.DB.prepare('SELECT * FROM attendees WHERE slug = ?1').bind(c.req.param('slug')).first<AttendeeRow>();
   const shell = await c.env.ASSETS.fetch(new Request(new URL('/', c.req.url), c.req.raw));
   if (!row || !shell.ok) return shell;
   const basePath = c.env.BASE_PATH ?? '/';
   const profileUrl = new URL(`${basePath.replace(/\/$/, '')}/p/${row.slug}`, c.req.url).toString();
-  const imageUrl = new URL(`${basePath.replace(/\/$/, '')}/og`, c.req.url).toString();
+  const imageUrl = new URL(`${basePath.replace(/\/$/, '')}/og.png`, c.req.url).toString();
   const title = `${row.name} · Cursor IRL`;
-  const description = `Building: ${row.project}. Find ${row.name} at Cursor Roadshow Bangalore.`;
+  const description = row.project ? `Building: ${row.project}. Find ${row.name} at Cursor Roadshow Bangalore.` : `Find ${row.name} at Cursor Roadshow Bangalore.`;
   const meta = [
-    `<title>${escapeHtml(title)}</title>`,
-    `<meta name="description" content="${escapeHtml(description)}" />`,
     `<meta property="og:type" content="profile" />`,
     `<meta property="og:site_name" content="Cursor IRL" />`,
     `<meta property="og:title" content="${escapeHtml(title)}" />`,
@@ -350,12 +376,22 @@ app.get('/p/:slug', async (c) => {
     `<meta name="twitter:title" content="${escapeHtml(title)}" />`,
     `<meta name="twitter:description" content="${escapeHtml(description)}" />`,
     `<meta name="twitter:image" content="${escapeHtml(imageUrl)}" />`,
+    `<meta name="twitter:image:alt" content="Cursor IRL card for ${escapeHtml(row.name)}" />`,
+    `<link rel="canonical" href="${escapeHtml(profileUrl)}" />`,
   ].join('');
-  const html = (await shell.text()).replace('</head>', `${meta}</head>`);
+  const html = (await shell.text())
+    .replace(/<title>[^<]*<\/title>/, `<title>${escapeHtml(title)}</title>`)
+    .replace(/<meta name="description"[^>]*\/>/, `<meta name="description" content="${escapeHtml(description)}" />`)
+    .replace(/\s*<meta property="og:[^>]+\/>/g, '')
+    .replace(/\s*<meta name="twitter:[^>]+\/>/g, '')
+    .replace('</head>', `${meta}</head>`);
   const headers = new Headers(shell.headers);
   headers.delete('content-length');
   return new Response(html, { status: shell.status, headers });
-});
+}
+
+app.get('/p/:slug', profilePage);
+app.get('/p/:slug/', profilePage);
 
 app.all('*', async (c) => {
   // Keep unknown API paths JSON instead of letting the SPA fallback return

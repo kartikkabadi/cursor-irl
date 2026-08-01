@@ -10,6 +10,8 @@ import type {
 
 const API_PREFIX = import.meta.env.BASE_URL;
 
+export type CursorUsageResponse = { handle: string; profile_url: string; tokens: number | null; available: boolean };
+
 export function absoluteUrl(path: string): string {
   return `${window.location.origin}${API_PREFIX}${path.replace(/^\//, '')}`;
 }
@@ -40,7 +42,7 @@ export async function getIdentityPreview() {
   return request<IdentityPreviewResponse>('/api/identity-preview', { method: 'POST' });
 }
 
-export async function listAttendees(query = '', filter = 'here', signal?: AbortSignal) {
+export async function listAttendees(query = '', filter = 'all', signal?: AbortSignal) {
   const params = new URLSearchParams({ filter });
   if (query) params.set('q', query);
   return request<{ attendees: Attendee[]; active_window_minutes: number }>(`/api/attendees?${params}`, { signal });
@@ -56,6 +58,10 @@ export async function getAttendee(slug: string) {
 
 export async function getAttendeeById(id: string) {
   return request<{ attendee: AttendeeDetail }>(`/api/attendees/${encodeURIComponent(id)}`);
+}
+
+export async function getCursorUsage(handle: string, signal?: AbortSignal) {
+  return request<CursorUsageResponse>(`/api/cursor/${encodeURIComponent(handle)}`, { signal });
 }
 
 export async function createAttendee(input: CreateAttendeeInput) {

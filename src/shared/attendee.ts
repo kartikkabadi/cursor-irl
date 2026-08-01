@@ -20,6 +20,7 @@ export type Attendee = {
   slug: string;
   name: string;
   x_handle: string | null;
+  cursor_handle: string | null;
   github_handle: string | null;
   avatar_mode: AvatarMode;
   avatar_variant: number;
@@ -50,6 +51,7 @@ export type AttendeeDetail = Attendee & {
 export type CreateAttendeeInput = {
   name: string;
   x_handle?: string;
+  cursor_handle?: string;
   github_handle?: string;
   avatar_mode?: AvatarMode;
   avatar_url?: string;

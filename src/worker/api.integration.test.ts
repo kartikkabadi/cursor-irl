@@ -44,7 +44,7 @@ describe('cursor-irl API integration', () => {
   });
 
   it('1: starts with an empty room', async () => {
-    const { status, body } = await api('/api/attendees?filter=here');
+    const { status, body } = await api('/api/attendees?filter=all');
     expect(status).toBe(200);
     expect((body.attendees as unknown[]).length).toBe(0);
   });
@@ -55,7 +55,7 @@ describe('cursor-irl API integration', () => {
     expect(body.profile_id).toBeTruthy();
     expect((body.candidates as unknown[]).length).toBe(6);
     expect(body.algorithm_version).toBe('ditherprint-v1');
-    const { status: listStatus, body: list } = await api('/api/attendees?filter=here');
+    const { status: listStatus, body: list } = await api('/api/attendees?filter=all');
     expect(listStatus).toBe(200);
     expect((list.attendees as unknown[]).length).toBe(0);
   });
@@ -148,17 +148,17 @@ describe('cursor-irl API integration', () => {
     expect(identity.cursor_color).toBe(attendeeA!.attendee.cursor_color);
   });
 
-  it('search finds the edited project and the here filter honors presence', async () => {
-    const { body } = await api('/api/attendees?q=edited%20project&filter=here');
+  it('search finds the edited project and the room list keeps people visible', async () => {
+    const { body } = await api('/api/attendees?q=edited%20project&filter=all');
     const found = (body.attendees as Attendee[]).map((attendee) => attendee.id);
     expect(found).toContain(attendeeA!.attendee.id);
 
     const { status } = await api(`/api/attendees/${attendeeB!.attendee.id}`, { method: 'PATCH', body: JSON.stringify({ present: false }) }, attendeeB!.edit_token);
     expect(status).toBe(200);
-    const { body: hereBody } = await api('/api/attendees?filter=here');
-    const hereIds = (hereBody.attendees as Attendee[]).map((attendee) => attendee.id);
-    expect(hereIds).toContain(attendeeA!.attendee.id);
-    expect(hereIds).not.toContain(attendeeB!.attendee.id);
+    const { body: roomBody } = await api('/api/attendees?filter=all');
+    const roomIds = (roomBody.attendees as Attendee[]).map((attendee) => attendee.id);
+    expect(roomIds).toContain(attendeeA!.attendee.id);
+    expect(roomIds).toContain(attendeeB!.attendee.id);
   });
 
   it('public responses never expose the edit token hash', async () => {
@@ -187,7 +187,7 @@ describe('cursor-irl API integration', () => {
   });
 
   it('20: no avatar objects remain (R2 is not used at launch)', async () => {
-    const { body } = await api('/api/attendees?filter=here');
+    const { body } = await api('/api/attendees?filter=all');
     expect((body.attendees as unknown[]).length).toBe(0);
   });
 });
