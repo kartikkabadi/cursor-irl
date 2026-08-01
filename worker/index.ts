@@ -33,7 +33,14 @@ type Variables = {
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
-app.use("/api/*", cors());
+app.use(
+  "/api/*",
+  cors({
+    origin: "*",
+    allowMethods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type"],
+  }),
+);
 
 app.use("/api/*", async (c, next) => {
   const url = new URL(c.req.url);
