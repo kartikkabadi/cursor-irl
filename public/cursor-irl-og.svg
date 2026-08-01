@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#f7f7f4"/>
+  <rect width="1200" height="14" fill="#26251e"/>
+  <rect y="616" width="1200" height="14" fill="#f54e00"/>
+  <rect x="84" y="112" width="340" height="340" fill="#e9e7e0" stroke="#26251e" stroke-width="3"/>
+  <path d="M165 170l116 100-49 8 29 84-27 10-31-84-35 35z" fill="#26251e"/>
+  <text x="84" y="510" font-family="monospace" font-size="24" letter-spacing="5" fill="#6d6b62">CURSOR ROADSHOW / BANGALORE</text>
+  <text x="520" y="170" font-family="Arial, sans-serif" font-size="78" font-weight="700" letter-spacing="-3" fill="#26251e">Cursor IRL</text>
+  <text x="520" y="270" font-family="Arial, sans-serif" font-size="38" fill="#26251e">Turn handles into</text>
+  <text x="520" y="320" font-family="Arial, sans-serif" font-size="38" fill="#26251e">handshakes.</text>
+  <text x="520" y="410" font-family="monospace" font-size="22" letter-spacing="2" fill="#f54e00">FIND THE HUMANS BEHIND THE HANDLES</text>
+</svg>

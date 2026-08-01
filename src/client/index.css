@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+:root {
+  --paper: #f7f7f4;
+  --ink: #26251e;
+  --muted: #6d6b62;
+  --line: rgba(38, 37, 30, .12);
+  --line-strong: rgba(38, 37, 30, .25);
+  --sand: #e9e7e0;
+  --sand-strong: #dddbd3;
+  --accent: #f54e00;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: "Instrument Sans", "Avenir Next", Avenir, ui-sans-serif, system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; background: var(--paper); }
+body { min-width: 320px; margin: 0; background: var(--paper); }
+button, input, textarea, select { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+a { text-decoration: none; }
+a:not([class*="text-"]) { color: inherit; }
+
+.field-input { width: 100%; border: 1px solid var(--line-strong); border-radius: 11px; background: rgba(255,255,255,.42); padding: 11px 13px; color: var(--ink); font-size: 14px; outline: none; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease; }
+.field-input-with-icon,
+#x_handle,
+#github_handle,
+input[placeholder="Search handles, projects, clues"] { padding-left: 42px; }
+.field-input::placeholder { color: #77756c; opacity: 1; }
+.field-input:focus { border-color: var(--ink); background: rgba(255,255,255,.7); box-shadow: 0 0 0 3px rgba(38,37,30,.08); }
+.button-primary { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; gap: 8px; border-radius: 999px; background: var(--ink); padding: 0 20px; color: var(--paper); font-size: 14px; font-weight: 600; transition: background .15s ease, transform .15s ease; }
+.button-primary.button-primary,
+a.button-primary { color: var(--paper); }
+.button-primary:hover { background: var(--accent); }
+.button-primary:active { transform: translateY(1px) scale(.98); }
+.attendee-card { min-width: 0; }
+.attendee-card:hover { color: var(--ink); }
+.reveal { animation: reveal .45s both; animation-delay: calc(var(--index, 0) * 42ms); }
+.skeleton-card { min-height: 250px; border-top: 1px solid var(--line-strong); background: linear-gradient(90deg, rgba(38,37,30,.04), rgba(38,37,30,.09), rgba(38,37,30,.04)); background-size: 220% 100%; animation: shimmer 1.6s ease-in-out infinite; }
+.skeleton-profile { min-height: 540px; background: linear-gradient(90deg, rgba(38,37,30,.05), rgba(38,37,30,.1), rgba(38,37,30,.05)); background-size: 220% 100%; animation: shimmer 1.6s ease-in-out infinite; }
+.skeleton-square { height: 260px; background: linear-gradient(90deg, rgba(38,37,30,.05), rgba(38,37,30,.1), rgba(38,37,30,.05)); background-size: 220% 100%; animation: shimmer 1.6s ease-in-out infinite; }
+.skeleton-line { height: 16px; background: rgba(38,37,30,.09); animation: shimmer 1.6s ease-in-out infinite; }
+.soft-pulse { animation: soft-pulse 2.2s ease-in-out infinite; }
+.find-card { box-shadow: 0 22px 55px rgba(38,37,30,.10); }
+
+@keyframes reveal { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+@keyframes soft-pulse { 0%, 100% { opacity: .55; transform: scale(.92); } 50% { opacity: 1; transform: scale(1.1); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}

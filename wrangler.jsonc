@@ -1,0 +1,35 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "cursor-irl",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-08-01",
+  "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "kartikkabadi.com/cursor-irl",
+      "zone_name": "kartikkabadi.com"
+    },
+    {
+      "pattern": "kartikkabadi.com/cursor-irl/*",
+      "zone_name": "kartikkabadi.com"
+    }
+  ],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/cursor-irl/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cursor-irl",
+      "database_id": "303ea77f-d067-4c1f-80b9-03ad3036a8ec",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "EVENT_NAME": "Cursor Roadshow Bangalore",
+    "BASE_PATH": "/cursor-irl/"
+  }
+}
